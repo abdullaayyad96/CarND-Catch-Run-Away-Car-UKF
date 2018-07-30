@@ -25,6 +25,11 @@ std::string hasData(std::string s) {
   return "";
 }
 
+// time at which catch is desired
+long long target_time = 4 * 1000000;
+
+bool initialized = false;
+
 int main()
 {
   uWS::Hub h;
@@ -78,6 +83,12 @@ int main()
           iss_L >> timestamp_L;
           meas_package_L.timestamp_ = timestamp_L;
           
+		  if (!initialized) {
+			  initialized = true;
+			  target_time += timestamp_L;
+		  }
+
+
     	  ukf.ProcessMeasurement(meas_package_L);
 		 
     	  string radar_measurment = j[1]["radar_measurement"];
@@ -102,11 +113,31 @@ int main()
           meas_package_R.raw_measurements_ << ro,theta, ro_dot;
           iss_R >> timestamp_R;
           meas_package_R.timestamp_ = timestamp_R;
+
+		  if (!initialized) {
+			  initialized = true;
+			  target_time += timestamp_R;
+		  }
           
     	  ukf.ProcessMeasurement(meas_package_R);
 
-	  target_x = ukf.x_[0];
-	  target_y = ukf.x_[1];
+		  //evaluate target x and y based on the desired catch time and current states
+		  double dt = (target_time - timestamp_R) / 1000000.0;
+		  if (dt < 0) {
+			  target_time = timestamp_R + 7 * 1000000;
+			  dt = 7.0;
+		  }
+		  if (ukf.x_[4] != 0)
+		  {
+			  target_x = ukf.x_[0] + (ukf.x_[2] / ukf.x_[4])*(sin(ukf.x_[3] + ukf.x_[4] * dt) - sin(ukf.x_[3])); //update x position
+			  target_y = ukf.x_[1] + (ukf.x_[2] / ukf.x_[4])*(-cos(ukf.x_[3] + ukf.x_[4] * dt) + cos(ukf.x_[3])); //update y position
+		  }
+		  else
+		  {
+			  //avoid division by zero
+			  target_x = ukf.x_[0] + dt * ukf.x_[2] * cos(ukf.x_[3]); //update x position
+			  target_y = ukf.x_[1] + dt * ukf.x_[2] * sin(ukf.x_[3]); //update y position
+		  }
 
     	  double heading_to_target = atan2(target_y - hunter_y, target_x - hunter_x);
     	  while (heading_to_target > M_PI) heading_to_target-=2.*M_PI; 
